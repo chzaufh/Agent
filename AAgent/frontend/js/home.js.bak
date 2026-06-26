@@ -1,0 +1,259 @@
+/**
+ * 首页逻辑
+ * 处理讨论列表展示和创建讨�?
+ */
+
+let expertTemplates = [];
+let selectedExperts = [];
+
+// DOM元素
+const discussionList = document.getElementById('discussionList');
+const emptyState = document.getElementById('emptyState');
+const loadingState = document.getElementById('loadingState');
+const createDiscussionBtn = document.getElementById('createDiscussionBtn');
+const createModal = document.getElementById('createModal');
+const createDiscussionForm = document.getElementById('createDiscussionForm');
+const cancelBtn = document.getElementById('cancelBtn');
+const statusFilter = document.getElementById('statusFilter');
+const expertsList = document.getElementById('expertsList');
+const selectedCount = document.getElementById('selectedCount');
+
+// 页面加载时初始化
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadExpertTemplates();
+    await loadDiscussions();
+});
+
+/**
+ * 加载专家模板
+ */
+async function loadExpertTemplates() {
+    try {
+        const data = await getExpertTemplates();
+        expertTemplates = data.templates || [];
+        renderExpertOptions();
+    } catch (error) {
+        console.error('加载专家模板失败:', error);
+        alert('加载专家模板失败，请刷新页面重试');
+    }
+}
+
+/**
+ * 渲染专家选项
+ */
+function renderExpertOptions() {
+    expertsList.innerHTML = expertTemplates.map(expert => `
+        <label class="flex items-center gap-3 p-3 bg-slate-700 rounded-lg cursor-pointer hover:bg-slate-600 transition-colors">
+            <input 
+                type="checkbox" 
+                class="expert-checkbox w-5 h-5 rounded" 
+                data-expert-id="${expert.id}"
+                data-expert='${JSON.stringify(expert)}'>
+            <div class="flex items-center gap-3 flex-1">
+                <div class="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold" 
+                     style="background-color: ${expert.avatarColor}">
+                    ${expert.name.charAt(0)}
+                </div>
+                <div class="flex-1">
+                    <div class="font-semibold">${expert.name}</div>
+                    <div class="text-sm text-slate-400">${expert.role}</div>
+                </div>
+            </div>
+        </label>
+    `).join('');
+
+    // 添加复选框事件监听
+    document.querySelectorAll('.expert-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', handleExpertSelection);
+    });
+}
+
+/**
+ * 处理专家选择
+ */
+function handleExpertSelection(event) {
+    const checkbox = event.target;
+    const expertData = JSON.parse(checkbox.dataset.expert);
+
+    if (checkbox.checked) {
+        if (selectedExperts.length >= 5) {
+            checkbox.checked = false;
+            alert('最多只能选择5位专�?);
+            return;
+        }
+        selectedExperts.push(expertData);
+    } else {
+        selectedExperts = selectedExperts.filter(e => e.id !== expertData.id);
+    }
+
+    selectedCount.textContent = selectedExperts.length;
+}
+
+/**
+ * 加载讨论列表
+ */
+async function loadDiscussions(status = '') {
+    try {
+        loadingState.classList.remove('hidden');
+        emptyState.classList.add('hidden');
+        discussionList.innerHTML = '';
+
+        const data = await getDiscussions(status);
+        const discussions = data.discussions || [];
+
+        loadingState.classList.add('hidden');
+
+        if (discussions.length === 0) {
+            emptyState.classList.remove('hidden');
+            return;
+        }
+
+        renderDiscussionList(discussions);
+    } catch (error) {
+        console.error('加载讨论列表失败:', error);
+        loadingState.classList.add('hidden');
+        discussionList.innerHTML = `
+            <div class="col-span-full text-center text-red-400 py-8">
+                <p>加载失败，请刷新页面重试</p>
+            </div>
+        `;
+    }
+}
+
+/**
+ * 渲染讨论列表
+ */
+function renderDiscussionList(discussions) {
+    discussionList.innerHTML = discussions.map(discussion => {
+        const statusDisplay = getStatusDisplay(discussion.status);
+        return `
+            <div class="bg-slate-800 rounded-xl p-6 hover:bg-slate-750 transition-all cursor-pointer border border-slate-700 hover:border-slate-600"
+                 onclick="goToDiscussion(${discussion.id})">
+                <div class="flex items-start justify-between mb-3">
+                    <h3 class="text-lg font-semibold line-clamp-2 flex-1">${discussion.title}</h3>
+                    <span class="ml-3 px-3 py-1 rounded-full text-xs font-semibold ${statusDisplay.class}">
+                        ${statusDisplay.text}
+                    </span>
+                </div>
+                
+                ${discussion.description ? `
+                    <p class="text-slate-400 text-sm mb-4 line-clamp-2">${discussion.description}</p>
+                ` : ''}
+                
+                <div class="flex items-center justify-between text-sm text-slate-500">
+                    <div class="flex items-center gap-4">
+                        <span>👥 ${discussion.participantCount || 0} 位专�?/span>
+                        <span>💬 ${discussion.messageCount || 0} 条发言</span>
+                    </div>
+                    <span>${formatDateTime(discussion.created_at)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * 跳转到讨论室页面
+ */
+function goToDiscussion(id) {
+    window.location.href = `discussion.html?id=${id}`;
+}
+
+/**
+ * 打开创建讨论模态框
+ */
+createDiscussionBtn.addEventListener('click', () => {
+    createModal.classList.remove('hidden');
+    selectedExperts = [];
+    selectedCount.textContent = '0';
+    document.querySelectorAll('.expert-checkbox').forEach(cb => cb.checked = false);
+});
+
+/**
+ * 关闭创建讨论模态框
+ */
+cancelBtn.addEventListener('click', () => {
+    createModal.classList.add('hidden');
+    createDiscussionForm.reset();
+});
+
+/**
+ * 点击模态框外部关闭
+ */
+createModal.addEventListener('click', (e) => {
+    if (e.target === createModal) {
+        createModal.classList.add('hidden');
+        createDiscussionForm.reset();
+    }
+});
+
+/**
+ * 提交创建讨论表单
+ */
+createDiscussionForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const title = document.getElementById('discussionTitle').value.trim();
+    const description = document.getElementById('discussionDescription').value.trim();
+
+    // 验证专家选择
+    if (selectedExperts.length < 3) {
+        alert('请至少选择3位专�?);
+        return;
+    }
+
+    if (selectedExperts.length > 5) {
+        alert('最多只能选择5位专�?);
+        return;
+    }
+
+    // 准备参与者数�?
+    const participants = selectedExperts.map((expert, index) => ({
+        name: expert.name,
+        role: expert.role,
+        expertise: expert.expertise,
+        systemPrompt: expert.systemPrompt,
+        avatarColor: expert.avatarColor,
+        orderIndex: index
+    }));
+
+    try {
+        // 禁用提交按钮
+        const submitBtn = createDiscussionForm.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = '创建�?..';
+
+        // 创建讨论
+        const result = await createDiscussion({
+            title,
+            description,
+            participants
+        });
+
+        // 启动讨论
+        await startDiscussion(result.discussion.id);
+
+        // 关闭模态框
+        createModal.classList.add('hidden');
+        createDiscussionForm.reset();
+
+        // 跳转到讨论室
+        window.location.href = `discussion.html?id=`;
+
+    } catch (error) {
+        console.error('创建讨论失败:', error);
+        alert('创建讨论失败�? + error.message);
+
+        // 恢复提交按钮
+        const submitBtn = createDiscussionForm.querySelector('button[type="submit"]');
+        submitBtn.disabled = false;
+        submitBtn.textContent = '创建并启动讨�?;
+    }
+});
+
+/**
+ * 状态筛�?
+ */
+statusFilter.addEventListener('change', (e) => {
+    loadDiscussions(e.target.value);
+});
